@@ -11,7 +11,7 @@ def main():
         data = bytes.decode()
         
         if "ping" in data.lower(): 
-            connection.send("+PONG\n\r\n".encode())
+            connection.send("+PONG\r\n".encode())
 
 
 if __name__ == "__main__":
