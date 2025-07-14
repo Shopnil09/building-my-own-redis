@@ -1,17 +1,22 @@
-import socket  # noqa: F401
+import socket
+import threading  
 
+BUFF_SIZE = 4096
+
+def handle_command(client: socket.socket): 
+    chunk = client.recv(BUFF_SIZE)
+    while True: 
+        if not chunk:
+            break
+        
+        client.sendall(b"+PONG\r\n")
 
 def main():
-    print("Logs from your program will appear here!")
-
+    print("Started....")
     server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
-    connection, _ = server_socket.accept() 
     while True: 
-        bytes = connection.recv(512)
-        data = bytes.decode()
-        
-        if "ping" in data.lower(): 
-            connection.send("+PONG\r\n".encode())
+        client_sock, client_addr = server_socket.accept()
+        threading.Thread(target=handle_command, args=(client_sock,)).start()
 
 
 if __name__ == "__main__":
