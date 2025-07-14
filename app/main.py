@@ -6,10 +6,10 @@ BUFF_SIZE = 4096
 def handle_command(client: socket.socket): 
     chunk = client.recv(BUFF_SIZE)
     while True: 
-        if not chunk:
+        if chunk == b"": 
             break
         
-        client.sendall(b"+PONG\r\n")
+        client.send(b"+PONG\r\n")
 
 def main():
     print("Started....")
