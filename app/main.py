@@ -4,9 +4,9 @@ import threading
 BUFF_SIZE = 4096
 
 def handle_command(client: socket.socket): 
-    chunk = client.recv(BUFF_SIZE)
     while True: 
-        if chunk == b"": 
+        chunk = client.recv(BUFF_SIZE)
+        if not chunk: 
             break
         
         client.send(b"+PONG\r\n")
