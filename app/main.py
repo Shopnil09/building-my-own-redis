@@ -39,9 +39,22 @@ def handle_command(client: socket.socket, store: RedisStore):
         elif command == "GET" and len(args) == 2: 
             data = store.get(args[1])
             client.send(data)
-        elif command == "SET" and len(args) == 3: 
-            data = store.set(args[1], args[2])
-            client.send(data)
+        elif command == "SET": 
+            if len(args) >= 3:
+                k, v = args[1], args[2]
+                px = None
+                if len(args) >= 5 and args[3].upper() == "PX": 
+                    # form validation for wrong input
+                    try: 
+                        px = int(args[4])
+                    except ValueError: 
+                        client.send(b"-ERR PX value must be an integer\r\n")
+                        continue
+                
+                data = store.set(k, v, px)
+                client.send(data)
+            else: 
+                client.send(b"-ERR wrong number of arguments for SET\r\n")
         else: 
             client.send(b"-ERR unknown command\r\n")
 
