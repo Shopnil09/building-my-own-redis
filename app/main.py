@@ -3,6 +3,7 @@ import threading
 from app.redis_store import RedisStore
 from app.config import Config
 import argparse
+import os
 
 BUFF_SIZE = 4096
 
@@ -11,14 +12,19 @@ def parse_redis_command(data: bytes):
     args = []
     i = 0
     while i < len(lines): 
-        if lines[i].startswith("*") or lines[i].startswith("$") or lines[i] == "": 
+        if lines[i].startswith("*"):
+            i += 1  # skip array header like *2
+        elif lines[i].startswith("$"):
+            i += 1  # skip to the value (right after $length)
+            if i < len(lines) and lines[i] != "":
+                args.append(lines[i])  # add the actual value
+            i += 1  # advance past the value
+        else:
+            if lines[i] != "":
+                args.append(lines[i])  # fallback in case it's a raw string
             i += 1
-            continue 
-        
-        args.append(lines[i]) 
-        i += 1
-    
     return args
+    
 
 def handle_command(client: socket.socket, store: RedisStore, config: Config):
     while True: 
@@ -45,6 +51,9 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
             param = args[2]
             value = config.get(param)
             client.send(value)
+        elif command == "KEYS" and len(args) == 2 and args[1] == "*":
+            keys = store.keys()
+            client.send(keys)
         elif command == "SET": 
             if len(args) >= 3:
                 k, v = args[1], args[2]
@@ -67,14 +76,18 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
 def main():
     print("Started....")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dir", default="/tmp")
+    parser.add_argument("--dir", default="tmp")
     parser.add_argument("--dbfilename", default="dump.rdb")
-    args = parser.parse_args()
+    parser_args = parser.parse_args()
     
-    print(">>> printing args")
-    print(args)
-    store = RedisStore()
-    config = Config(args.dir, args.dbfilename)
+    cwd = os.getcwd()
+    print(f"Printing cwd {cwd}")
+    rdb_path = os.path.join(cwd, parser_args.dir, parser_args.dbfilename)
+    print(f"Loading RDB from: {rdb_path}")
+    
+    config = Config(parser_args.dir, parser_args.dbfilename)
+    store = RedisStore(rdb_path=rdb_path)
+    
     server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
     while True: 
         client_sock, client_addr = server_socket.accept()
