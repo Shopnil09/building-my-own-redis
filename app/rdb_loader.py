@@ -42,6 +42,7 @@ def load_keys_from_rdb(path: str):
     
     # Step 4: parse key-val entries
     while True: 
+      expiry = None
       b = f.read(1)
       if not b or b[0] == 0xFF: 
         break # EOF marker
@@ -64,12 +65,9 @@ def load_keys_from_rdb(path: str):
         val = read_string(f)
         now = int(time.time() * 1000)
         if expiry is not None and expiry < now: 
-          expiry = None
           continue
         
         keys[key] = (val, expiry)
-        # reset for the next iteration
-        expiry = None
       else: 
         print("[RDB] Unknown or unsupported type")
   
