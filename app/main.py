@@ -1,6 +1,8 @@
 import socket
 import threading
 from app.redis_store import RedisStore
+from app.config import Config
+import argparse
 
 BUFF_SIZE = 4096
 
@@ -18,7 +20,7 @@ def parse_redis_command(data: bytes):
     
     return args
 
-def handle_command(client: socket.socket, store: RedisStore):
+def handle_command(client: socket.socket, store: RedisStore, config: Config):
     while True: 
         chunk = client.recv(BUFF_SIZE)
         print("Raw chunk received", chunk)
@@ -39,6 +41,10 @@ def handle_command(client: socket.socket, store: RedisStore):
         elif command == "GET" and len(args) == 2: 
             data = store.get(args[1])
             client.send(data)
+        elif command == "CONFIG" and len(args) == 3 and args[1].upper() == "GET":
+            param = args[2]
+            value = config.get(param)
+            client.send(value)
         elif command == "SET": 
             if len(args) >= 3:
                 k, v = args[1], args[2]
@@ -60,11 +66,19 @@ def handle_command(client: socket.socket, store: RedisStore):
 
 def main():
     print("Started....")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dir", default="/tmp")
+    parser.add_argument("--dbfilename", default="dump.rdb")
+    args = parser.parse_args()
+    
+    print(">>> printing args")
+    print(args)
     store = RedisStore()
+    config = Config(args.dir, args.dbfilename)
     server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
     while True: 
         client_sock, client_addr = server_socket.accept()
-        threading.Thread(target=handle_command, args=(client_sock, store)).start()
+        threading.Thread(target=handle_command, args=(client_sock, store, config)).start()
 
 
 if __name__ == "__main__":
