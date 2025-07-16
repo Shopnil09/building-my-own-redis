@@ -1,5 +1,6 @@
 import os
 import io
+import time
 
 from .rdb_utils import decode_size, read_string
 
@@ -45,15 +46,30 @@ def load_keys_from_rdb(path: str):
       if not b or b[0] == 0xFF: 
         break # EOF marker
       
-      if b[0] in (0xFC, 0xFD): # optional expiry
-        skip = 8 if b[0] == 0xFC else 4
-        f.read(skip)
+      # if b[0] in (0xFC, 0xFD): # optional expiry
+      #   skip = 8 if b[0] == 0xFC else 4
+      #   f.read(skip)
+      #   b = f.read(1)
+      
+      # reading expiry time from .rdb file too
+      if b[0] == 0xFC: # expiry in ms (8 bytes, little endian)
+        expiry = int.from_bytes(f.read(8), "little")
+        b = f.read(1)
+      elif b[0] == 0xFD: # expiry in s (4 bytes, little endian)
+        expiry = int.from_bytes(f.read(4), "little") * 1000
         b = f.read(1)
       
       if b and b[0] == 0x00: 
         key = read_string(f)
         val = read_string(f)
-        keys[key] = (val, None)
+        now = int(time.time() * 1000)
+        if expiry is not None and expiry < now: 
+          expiry = None
+          continue
+        
+        keys[key] = (val, expiry)
+        # reset for the next iteration
+        expiry = None
       else: 
         print("[RDB] Unknown or unsupported type")
   
