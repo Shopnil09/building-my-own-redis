@@ -78,6 +78,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", default="tmp")
     parser.add_argument("--dbfilename", default="dump.rdb")
+    parser.add_argument("--port", type=int, default=6379) 
     parser_args = parser.parse_args()
     
     cwd = os.getcwd()
@@ -88,7 +89,7 @@ def main():
     config = Config(parser_args.dir, parser_args.dbfilename)
     store = RedisStore(rdb_path=rdb_path)
     
-    server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
+    server_socket = socket.create_server(("localhost", parser_args.port), reuse_port=True)
     while True: 
         client_sock, client_addr = server_socket.accept()
         threading.Thread(target=handle_command, args=(client_sock, store, config)).start()
