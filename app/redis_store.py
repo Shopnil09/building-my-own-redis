@@ -1,5 +1,6 @@
 import time
 from .rdb_loader import load_keys_from_rdb
+import secrets
 
 class RedisStore: 
   def __init__(self, rdb_path=None, replica_config=None): 
@@ -7,6 +8,16 @@ class RedisStore:
     self.role = replica_config.get("role", "master")
     self.master_host = replica_config.get("master_host")
     self.master_port = replica_config.get("master_port")
+    
+    # replication fields (only relevant for master)
+    if self.role == "master": 
+      self.master_repl_id = secrets.token_hex(20)
+      self.master_repl_offset = 0
+    else: 
+      self.master_repl_id = None
+      self.master_repl_offset = None
+    
+    
     if rdb_path: # if rdb_path exists, load the data from the file 
       parsed_data = load_keys_from_rdb(rdb_path)
       self.data.update(parsed_data)
@@ -51,8 +62,14 @@ class RedisStore:
     return self._encode_resp_list(valid_keys)
   
   def replication_info(self): 
-    payload = f"role:{self.role}"
-    return f"${len(payload)}\r\n{payload}\r\n".encode()
+    lines = [
+        f"role:{self.role}",
+        f"master_repl_offset:{self.master_repl_offset}",
+        f"master_replid:{self.master_repl_id}",
+    ]
+    payload = "\r\n".join(lines)  # do NOT add a final \r\n manually
+    full_payload = f"${len(payload)}\r\n{payload}\r\n"
+    return full_payload.encode()
 
   def _encode_resp_list(self, items): 
     resp = f"*{len(items)}\r\n"

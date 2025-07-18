@@ -73,6 +73,7 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     client.send(b"-ERR wrong number of arguments for SET\r\n")
             elif command == "INFO" and len(args) == 2 and args[1].upper() == "REPLICATION": 
                 info = store.replication_info()
+                print("INFO payload:", repr(info))
                 client.send(info)
             else: 
                 client.send(b"-ERR unknown command\r\n")
@@ -102,6 +103,7 @@ def main():
             raise ValueError("--replicaof must be in format '<host> <port>'")
         replica_config = {"role": "slave", "master_host": host_port[0], "master_port": int(host_port[1])}
     else: 
+        print("[REPLICA MASTER]")
         replica_config = {"role": "master"}
         
     store = RedisStore(rdb_path=rdb_path, replica_config=replica_config)
