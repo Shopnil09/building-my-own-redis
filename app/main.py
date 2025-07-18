@@ -85,16 +85,26 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", default="tmp")
     parser.add_argument("--dbfilename", default="dump.rdb")
-    parser.add_argument("--port", type=int, default=6379) 
+    parser.add_argument("--port", type=int, default=6379)
+    parser.add_argument("--replicaof", type=str, help="Specify master host and port for replica mode, e.g. 'localhost 6379'")
     parser_args = parser.parse_args()
-    
+
     cwd = os.getcwd()
     print(f"Printing cwd {cwd}")
     rdb_path = os.path.join(cwd, parser_args.dir, parser_args.dbfilename)
     print(f"Loading RDB from: {rdb_path}")
     
     config = Config(parser_args.dir, parser_args.dbfilename)
-    store = RedisStore(rdb_path=rdb_path)
+    replica_config = None
+    if parser_args.replicaof: 
+        host_port = parser_args.replicaof.strip().split()
+        if len(host_port) != 2:
+            raise ValueError("--replicaof must be in format '<host> <port>'")
+        replica_config = {"role": "slave", "master_host": host_port[0], "master_port": int(host_port[1])}
+    else: 
+        replica_config = {"role": "master"}
+        
+    store = RedisStore(rdb_path=rdb_path, replica_config=replica_config)
     
     server_socket = socket.create_server(("localhost", parser_args.port), reuse_port=True)
     while True: 
