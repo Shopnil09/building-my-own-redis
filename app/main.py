@@ -27,51 +27,58 @@ def parse_redis_command(data: bytes):
     
 
 def handle_command(client: socket.socket, store: RedisStore, config: Config):
-    while True: 
-        chunk = client.recv(BUFF_SIZE)
-        print("Raw chunk received", chunk)
-        if not chunk: 
-            break
-        
-        args = parse_redis_command(chunk)
-        print("Parsed command:", args)
-        
-        command = args[0].upper()
-        
-        if command == "PING": 
-            response = f"+PONG\r\n"
-            client.send(response.encode())
-        elif command == "ECHO" and len(args) == 2: 
-            response = f"${len(args[1])}\r\n{args[1]}\r\n"
-            client.send(response.encode())
-        elif command == "GET" and len(args) == 2: 
-            data = store.get(args[1])
-            client.send(data)
-        elif command == "CONFIG" and len(args) == 3 and args[1].upper() == "GET":
-            param = args[2]
-            value = config.get(param)
-            client.send(value)
-        elif command == "KEYS" and len(args) == 2 and args[1] == "*":
-            keys = store.keys()
-            client.send(keys)
-        elif command == "SET": 
-            if len(args) >= 3:
-                k, v = args[1], args[2]
-                px = None
-                if len(args) >= 5 and args[3].upper() == "PX": 
-                    # form validation for wrong input
-                    try: 
-                        px = int(args[4])
-                    except ValueError: 
-                        client.send(b"-ERR PX value must be an integer\r\n")
-                        continue
-                
-                data = store.set(k, v, px)
+    try: 
+        while True: 
+            chunk = client.recv(BUFF_SIZE)
+            print("Raw chunk received", chunk)
+            if not chunk: 
+                break
+            
+            args = parse_redis_command(chunk)
+            print("Parsed command:", args)
+            
+            command = args[0].upper()
+            
+            if command == "PING": 
+                response = f"+PONG\r\n"
+                client.send(response.encode())
+            elif command == "ECHO" and len(args) == 2: 
+                response = f"${len(args[1])}\r\n{args[1]}\r\n"
+                client.send(response.encode())
+            elif command == "GET" and len(args) == 2: 
+                data = store.get(args[1])
                 client.send(data)
+            elif command == "CONFIG" and len(args) == 3 and args[1].upper() == "GET":
+                param = args[2]
+                value = config.get(param)
+                client.send(value)
+            elif command == "KEYS" and len(args) == 2 and args[1] == "*":
+                keys = store.keys()
+                client.send(keys)
+            elif command == "SET": 
+                if len(args) >= 3:
+                    k, v = args[1], args[2]
+                    px = None
+                    if len(args) >= 5 and args[3].upper() == "PX": 
+                        # form validation for wrong input
+                        try: 
+                            px = int(args[4])
+                        except ValueError: 
+                            client.send(b"-ERR PX value must be an integer\r\n")
+                            continue
+                    
+                    data = store.set(k, v, px)
+                    client.send(data)
+                else: 
+                    client.send(b"-ERR wrong number of arguments for SET\r\n")
+            elif command == "INFO" and len(args) == 2 and args[1].upper() == "REPLICATION": 
+                info = store.replication_info()
+                client.send(info)
             else: 
-                client.send(b"-ERR wrong number of arguments for SET\r\n")
-        else: 
-            client.send(b"-ERR unknown command\r\n")
+                client.send(b"-ERR unknown command\r\n")
+    except Exception as e: 
+        print(f"[Thread Error] Exception in client handler: {e}")
+        client.close()
 
 def main():
     print("Started....")
