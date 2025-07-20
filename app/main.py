@@ -27,17 +27,36 @@ def parse_redis_command(data: bytes):
     
 def replicate_handshake(store: RedisStore): 
     try: 
-        # s = socket.create_connection((store.master_host, store.master_port))
-        # store.replica_socket = s
-        # s.sendall(b"*1\r\n$4\r\nPING\r\n")
-        # response = s.recv(1024)
-        # print(f"[Replica] Received from master: {response}")
-        # s.close()
-        with socket.create_connection((store.master_host, store.master_port)) as s: 
-            # store.replica_socket = s
-            s.sendall(b"*1\r\n$4\r\nPING\r\n")
-            response = s.recv(1024)
-            print(f"[Replica] Received from master: {response}")
+        s = socket.create_connection((store.master_host, store.master_port))
+        store.replica_socket = s
+        
+        # step 1: Send ping
+        s.sendall(b"*1\r\n$4\r\nPING\r\n")
+        response = s.recv(1024)
+        print(f"[Replica] Received from master: {response}")
+        
+        # step 2: send replconf listening-port
+        port_str = str(store.replica_port)
+        replconf_1 = (
+            f"$8\r\nREPLCONF\r\n"
+            f"$14\r\nlistening-port\r\n"
+            f"${len(port_str)}\r\n{port_str}\r\n"
+        )
+        s.sendall(replconf_1.encode())
+        repl_conf1_res = s.recv(1024)
+        print(f"[Replica] Received replconf1 response: {repl_conf1_res}")
+        
+        # step 3: send replconf with capa and psync2
+        replconf_2 = (
+            "*3\r\n"
+            "$8\r\nREPLCONF\r\n"
+            "$4\r\ncapa\r\n"
+            "$6\r\npsync2\r\n"
+        )
+        s.sendall(replconf_2.encode())
+        repl_conf2_res = s.recv(1024)
+        print(f"[Replica] Received replconf2 response: {repl_conf2_res}")
+        print("[Replica] Completed REPLCONF handshake")
     except Exception as e: 
         # even with error, using "with" still closes the connection
         print(f"[Replica] Connection to master failed: {e}")
@@ -91,6 +110,8 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                 info = store.replication_info()
                 print("INFO payload:", repr(info))
                 client.send(info)
+            elif command == "REPLCONF":
+                client.send(b"+OK\r\n")
             else: 
                 client.send(b"-ERR unknown command\r\n")
     except Exception as e: 
@@ -118,7 +139,7 @@ def main():
         host_port = parser_args.replicaof.strip().split()
         if len(host_port) != 2:
             raise ValueError("--replicaof must be in format '<host> <port>'")
-        replica_config = {"role": "slave", "master_host": host_port[0], "master_port": int(host_port[1])}
+        replica_config = {"role": "slave", "master_host": host_port[0], "master_port": int(host_port[1]), "replica_port": parser_args.port}
     else: 
         print("[REPLICA MASTER]")
         replica_config = {"role": "master"}

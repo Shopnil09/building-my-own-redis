@@ -8,6 +8,7 @@ class RedisStore:
     self.role = replica_config.get("role", "master")
     self.master_host = replica_config.get("master_host")
     self.master_port = replica_config.get("master_port")
+    self.replica_port = replica_config.get("replica_port", None)
     
     # replication fields (only relevant for master)
     if self.role == "master": 
