@@ -25,6 +25,22 @@ def parse_redis_command(data: bytes):
             i += 1
     return args
     
+def replicate_handshake(store: RedisStore): 
+    try: 
+        # s = socket.create_connection((store.master_host, store.master_port))
+        # store.replica_socket = s
+        # s.sendall(b"*1\r\n$4\r\nPING\r\n")
+        # response = s.recv(1024)
+        # print(f"[Replica] Received from master: {response}")
+        # s.close()
+        with socket.create_connection((store.master_host, store.master_port)) as s: 
+            # store.replica_socket = s
+            s.sendall(b"*1\r\n$4\r\nPING\r\n")
+            response = s.recv(1024)
+            print(f"[Replica] Received from master: {response}")
+    except Exception as e: 
+        # even with error, using "with" still closes the connection
+        print(f"[Replica] Connection to master failed: {e}")
 
 def handle_command(client: socket.socket, store: RedisStore, config: Config):
     try: 
@@ -97,6 +113,7 @@ def main():
     
     config = Config(parser_args.dir, parser_args.dbfilename)
     replica_config = None
+    # replica storing master information inside RedisStore if parser_args.replicaof exists
     if parser_args.replicaof: 
         host_port = parser_args.replicaof.strip().split()
         if len(host_port) != 2:
@@ -105,9 +122,16 @@ def main():
     else: 
         print("[REPLICA MASTER]")
         replica_config = {"role": "master"}
-        
-    store = RedisStore(rdb_path=rdb_path, replica_config=replica_config)
     
+    store = RedisStore(rdb_path=rdb_path, replica_config=replica_config)
+    # send PING to master server from slave server
+    if replica_config["role"] == "slave": 
+        threading.Thread(
+            target=replicate_handshake,
+            args=(store,),
+            daemon=True
+        ).start()
+
     server_socket = socket.create_server(("localhost", parser_args.port), reuse_port=True)
     while True: 
         client_sock, client_addr = server_socket.accept()
