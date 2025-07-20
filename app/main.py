@@ -38,8 +38,9 @@ def replicate_handshake(store: RedisStore):
         # step 2: send replconf listening-port
         port_str = str(store.replica_port)
         replconf_1 = (
-            f"$8\r\nREPLCONF\r\n"
-            f"$14\r\nlistening-port\r\n"
+            "*3\r\n"
+            "$8\r\nREPLCONF\r\n"
+            "$14\r\nlistening-port\r\n"
             f"${len(port_str)}\r\n{port_str}\r\n"
         )
         s.sendall(replconf_1.encode())
