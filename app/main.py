@@ -139,7 +139,13 @@ def replicate_handshake(store: RedisStore):
             if header.startswith(b"$"):
                 rdb_len = int(header[1:-2])
                 print(f"[Replica] Expecting {rdb_len} bytes of RDB")
-                rdb_data = s.recv(rdb_len)
+                rdb_data = b""
+                while len(rdb_data) < rdb_len: 
+                    chunk = s.recv(min(4096, rdb_len-len(rdb_data)))
+                    if not chunk: 
+                        raise ConnectionError("Socket closed while receiving RDB")
+                    rdb_data += chunk
+                # rdb_data = s.recv(rdb_len)
                 print(f"[Replica] Received RDB data ({len(rdb_data)} bytes)")
             else:
                 print("[Replica] Invalid RDB header")

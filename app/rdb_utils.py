@@ -37,27 +37,52 @@ def read_string(f):
   else: 
     print(f"[WARN] from read_string")
 
-def read_resp_command(sock: socket):
+def read_resp_command(sock: socket.socket):
     def read_line():
         line = b""
         while not line.endswith(b"\r\n"):
-            line += sock.recv(1)
+            chunk = sock.recv(1)
+            if not chunk:
+                raise ConnectionError("Socket closed during line read")
+            line += chunk
         return line
 
+    # Read the RESP array header: *<num>\r\n
     header = read_line()
     if not header.startswith(b"*"):
         raise ValueError("Invalid RESP array")
 
-    num_args = int(header[1:-2])
+    try:
+        num_args = int(header[1:-2])  # Skip * and \r\n
+    except ValueError:
+        raise ValueError("Invalid RESP array length")
+
     args = []
     for _ in range(num_args):
+        # Read bulk string header: $<len>\r\n
         length_line = read_line()
         if not length_line.startswith(b"$"):
             raise ValueError("Invalid bulk string header")
-        length = int(length_line[1:-2])
-        arg = sock.recv(length)
-        sock.recv(2)  # Discard trailing \r\n
-        args.append(arg.decode())
+
+        try:
+            length = int(length_line[1:-2])
+        except ValueError:
+            raise ValueError("Invalid bulk string length")
+
+        # Read the actual content (can be binary-safe)
+        arg = b""
+        while len(arg) < length:
+            part = sock.recv(length - len(arg))
+            if not part:
+                raise ConnectionError("Socket closed during argument read")
+            arg += part
+
+        # Consume the trailing \r\n
+        trailer = sock.recv(2)
+        if trailer != b"\r\n":
+            raise ValueError("Expected CRLF after argument")
+
+        args.append(arg.decode())  # or `.decode("utf-8", errors="replace")`
 
     return args
   
