@@ -14,10 +14,11 @@ class RedisStore:
     if self.role == "master": 
       self.master_repl_id = secrets.token_hex(20)
       self.master_repl_offset = 0
+      # to store the replica sockets to propagate commands
+      self.replica_sockets = [] 
     else: 
       self.master_repl_id = None
       self.master_repl_offset = None
-    
     
     if rdb_path: # if rdb_path exists, load the data from the file 
       parsed_data = load_keys_from_rdb(rdb_path)

@@ -1,5 +1,6 @@
 # app/rdb_utils.py
 import sys
+import socket
 
 def decode_size(f): 
   first = f.read(1)
@@ -35,3 +36,28 @@ def read_string(f):
     return f.read(size).decode("utf-8")
   else: 
     print(f"[WARN] from read_string")
+
+def read_resp_command(sock: socket):
+    def read_line():
+        line = b""
+        while not line.endswith(b"\r\n"):
+            line += sock.recv(1)
+        return line
+
+    header = read_line()
+    if not header.startswith(b"*"):
+        raise ValueError("Invalid RESP array")
+
+    num_args = int(header[1:-2])
+    args = []
+    for _ in range(num_args):
+        length_line = read_line()
+        if not length_line.startswith(b"$"):
+            raise ValueError("Invalid bulk string header")
+        length = int(length_line[1:-2])
+        arg = sock.recv(length)
+        sock.recv(2)  # Discard trailing \r\n
+        args.append(arg.decode())
+
+    return args
+  

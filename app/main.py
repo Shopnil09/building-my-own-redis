@@ -4,6 +4,7 @@ from app.redis_store import RedisStore
 from app.config import Config
 import argparse
 import os
+from app.rdb_utils import read_resp_command
 
 BUFF_SIZE = 4096
 
@@ -39,9 +40,53 @@ def send_empty_rdb(sock: socket):
     sock.sendall(header + EMPTY_RDB_BYTES)
     print("[Master] Sent the EMPTY_RDB_HEX to replica")
 
+def propagate_commands_to_replicas(args, store: RedisStore):
+    # if it is not the master server, do not run any logic and return
+    if store.role != "master": 
+        return
+    
+    # construct the RESP array manually
+    resp = f"*{len(args)}\r\n"
+    for arg in args: 
+        resp += f"${len(arg)}\r\n{arg}\r\n"
+    print("[Master] Printing resp:", resp)
+    data = resp.encode()
+    # to remove non-active sockets
+    disconnected = []
+    for s in store.replica_sockets: 
+        try: 
+            s.sendall(data)
+        except Exception as e: 
+            print("[Master] Failed to send to replica {e}")
+            disconnected.append(s)
+    
+    # add logic to cleanup disconnected sockets
+
+def replicate_command_listener(store: RedisStore): 
+    # this is added into the RedisStore in line 72 in replicate_handshake
+    repl_sock = store.replica_socket
+    while True: 
+        try: 
+            args = read_resp_command(repl_sock)
+            if not args: 
+                continue
+            
+            command = args[0].upper()
+            if command == "SET": 
+                key, val = args[1], args[2]
+                px = None
+                if len(args) >= 5 and args[3].upper() == "PX":
+                    px = int(args[4])
+                store.set(key, val, px)
+                print("[Replica] Set data to the RedisStore sent by master")
+        except Exception as e: 
+            print(f"[Replica] Error reading command: {e}")
+            break
+
 def replicate_handshake(store: RedisStore): 
     try: 
         s = socket.create_connection((store.master_host, store.master_port))
+        # store.replica_socket is only present for replica RedisStores
         store.replica_socket = s
         
         # step 1: Send ping
@@ -100,6 +145,14 @@ def replicate_handshake(store: RedisStore):
                 print("[Replica] Invalid RDB header")
         
         print("[Replica] Completed REPLCONF handshake")
+        
+        # logic to setup a background listener to handle propagated commands from master
+        threading.Thread(
+            target=replicate_command_listener,
+            args=(store,),
+            daemon=True,
+        ).start()
+        print("[Replica] Started listener thread for command propagation")
     except Exception as e: 
         # even with error, using "with" still closes the connection
         print(f"[Replica] Connection to master failed: {e}")
@@ -147,6 +200,9 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     
                     data = store.set(k, v, px)
                     client.send(data)
+                    # propagate the command to the replicas of the master
+                    # this command will not be executed by the replicas since there is a condition in the beginning of the func.
+                    propagate_commands_to_replicas(args, store)
                 else: 
                     client.send(b"-ERR wrong number of arguments for SET\r\n")
             elif command == "INFO" and len(args) == 2 and args[1].upper() == "REPLICATION": 
@@ -163,6 +219,9 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     # calling send_empty_rdb because psync command tells the master that the replica doesn't have data. 
                     # send_empty_rdb is sending an empty file (for this exercise) to fully synchronize
                     send_empty_rdb(client)
+                    if store.role == "master": 
+                        store.replica_sockets.append(client)
+                        print("[Master] Registered a new replica socket")
             else: 
                 client.send(b"-ERR unknown command\r\n")
     except Exception as e: 
@@ -206,6 +265,7 @@ def main():
 
     server_socket = socket.create_server(("localhost", parser_args.port), reuse_port=True)
     while True: 
+        # client_sock are the client requests incoming to the server e.g. replica clients
         client_sock, client_addr = server_socket.accept()
         threading.Thread(target=handle_command, args=(client_sock, store, config)).start()
 
