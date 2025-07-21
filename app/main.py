@@ -57,6 +57,17 @@ def replicate_handshake(store: RedisStore):
         s.sendall(replconf_2.encode())
         repl_conf2_res = s.recv(1024)
         print(f"[Replica] Received replconf2 response: {repl_conf2_res}")
+        
+        # step 4: send psync ? -1
+        psync_command = (
+            "*3\r\n"
+            "$5\r\nPSYNC\r\n"
+            "$1\r\n?\r\n"
+            "$2\r\n-1\r\n"
+        )
+        s.sendall(psync_command.encode())
+        psync_response = s.recv(1024)
+        print(f"[Replica] Received PSYNC response {psync_response}")
         print("[Replica] Completed REPLCONF handshake")
     except Exception as e: 
         # even with error, using "with" still closes the connection
@@ -113,6 +124,11 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                 client.send(info)
             elif command == "REPLCONF":
                 client.send(b"+OK\r\n")
+            elif command == "PSYNC": 
+                if len(args) == 3 and args[1] == "?" and args[2] == "-1": 
+                    repl_id = store.master_repl_id
+                    response = f"+FULLRESYNC {repl_id} 0\r\n"
+                    client.send(response.encode())
             else: 
                 client.send(b"-ERR unknown command\r\n")
     except Exception as e: 
