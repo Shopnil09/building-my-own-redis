@@ -7,6 +7,14 @@ import os
 
 BUFF_SIZE = 4096
 
+EMPTY_RDB_HEX = (
+    "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473"
+    "c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365"
+    "c000fff06e3bfec0ff5aa2"
+)
+
+EMPTY_RDB_BYTES = bytes.fromhex(EMPTY_RDB_HEX)
+
 def parse_redis_command(data: bytes): 
     lines = data.decode().split("\r\n")
     args = []
@@ -24,7 +32,13 @@ def parse_redis_command(data: bytes):
                 args.append(lines[i])  # fallback in case it's a raw string
             i += 1
     return args
-    
+
+def send_empty_rdb(sock: socket): 
+    rdb_len = len(EMPTY_RDB_BYTES)
+    header = f"${rdb_len}\r\n".encode()
+    sock.sendall(header + EMPTY_RDB_BYTES)
+    print("[Master] Sent the EMPTY_RDB_HEX to replica")
+
 def replicate_handshake(store: RedisStore): 
     try: 
         s = socket.create_connection((store.master_host, store.master_port))
@@ -68,6 +82,23 @@ def replicate_handshake(store: RedisStore):
         s.sendall(psync_command.encode())
         psync_response = s.recv(1024)
         print(f"[Replica] Received PSYNC response {psync_response}")
+        # Read RDB file (this is binary, so read based on declared length)
+        if psync_response.startswith(b'+FULLRESYNC'):
+            # Read the next line, which should be like $91\r\n
+            header = b""
+            while not header.endswith(b"\r\n"):
+                header += s.recv(1)
+
+            print(f"[Replica] RDB header: {header}")
+
+            if header.startswith(b"$"):
+                rdb_len = int(header[1:-2])
+                print(f"[Replica] Expecting {rdb_len} bytes of RDB")
+                rdb_data = s.recv(rdb_len)
+                print(f"[Replica] Received RDB data ({len(rdb_data)} bytes)")
+            else:
+                print("[Replica] Invalid RDB header")
+        
         print("[Replica] Completed REPLCONF handshake")
     except Exception as e: 
         # even with error, using "with" still closes the connection
@@ -129,6 +160,9 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     repl_id = store.master_repl_id
                     response = f"+FULLRESYNC {repl_id} 0\r\n"
                     client.send(response.encode())
+                    # calling send_empty_rdb because psync command tells the master that the replica doesn't have data. 
+                    # send_empty_rdb is sending an empty file (for this exercise) to fully synchronize
+                    send_empty_rdb(client)
             else: 
                 client.send(b"-ERR unknown command\r\n")
     except Exception as e: 
