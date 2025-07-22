@@ -143,27 +143,27 @@ def replicate_handshake(store: RedisStore):
         psync_response = s.recv(1024)
         print(f"[Replica] Received PSYNC response {psync_response}")
         # Read RDB file (this is binary, so read based on declared length)
-        if psync_response.startswith(b'+FULLRESYNC'):
-            # Read the next line, which should be like $91\r\n
-            header = b""
-            while not header.endswith(b"\r\n"):
-                header += s.recv(1)
+        # if psync_response.startswith(b'+FULLRESYNC'):
+        #     # Read the next line, which should be like $91\r\n
+        #     header = b""
+        #     while not header.endswith(b"\r\n"):
+        #         header += s.recv(1)
 
-            print(f"[Replica] RDB header: {header}")
+        #     print(f"[Replica] RDB header: {header}")
 
-            if header.startswith(b"$"):
-                rdb_len = int(header[1:-2])
-                print(f"[Replica] Expecting {rdb_len} bytes of RDB")
-                rdb_data = b""
-                while len(rdb_data) < rdb_len: 
-                    chunk = s.recv(min(4096, rdb_len-len(rdb_data)))
-                    if not chunk: 
-                        raise ConnectionError("Socket closed while receiving RDB")
-                    rdb_data += chunk
-                # rdb_data = s.recv(rdb_len)
-                print(f"[Replica] Received RDB data ({len(rdb_data)} bytes)")
-            else:
-                print("[Replica] Invalid RDB header")
+        #     if header.startswith(b"$"):
+        #         rdb_len = int(header[1:-2])
+        #         print(f"[Replica] Expecting {rdb_len} bytes of RDB")
+        #         rdb_data = b""
+        #         while len(rdb_data) < rdb_len: 
+        #             chunk = s.recv(min(4096, rdb_len-len(rdb_data)))
+        #             if not chunk: 
+        #                 raise ConnectionError("Socket closed while receiving RDB")
+        #             rdb_data += chunk
+        #         # rdb_data = s.recv(rdb_len)
+        #         print(f"[Replica] Received RDB data ({len(rdb_data)} bytes)")
+        #     else:
+        #         print("[Replica] Invalid RDB header")
         
         print("[Replica] Completed REPLCONF handshake")
         
@@ -241,6 +241,7 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     # calling send_empty_rdb because psync command tells the master that the replica doesn't have data. 
                     # send_empty_rdb is sending an empty file (for this exercise) to fully synchronize
                     send_empty_rdb(client)
+                    time.sleep(0.05)
                     if store.role == "master": 
                         store.replica_sockets.append(client)
                         print("[Master] Registered a new replica socket")
