@@ -45,9 +45,12 @@ def read_resp_command(sock):
                 raise ConnectionError("Socket closed during line read")
             line += chunk
         return line
-
-    # Read the RESP array header: *<num>\r\n
+    
     header = read_line()
+    if not header: 
+      raise ConnectionError("Socket closed while reading RESP array header")
+    # Read the RESP array header: *<num>\r\n
+    
     if not header.startswith(b"*"):
         raise ValueError("Invalid RESP array")
 

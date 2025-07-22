@@ -41,6 +41,21 @@ def send_empty_rdb(sock: socket):
     sock.sendall(header + EMPTY_RDB_BYTES)
     print("[Master] Sent the EMPTY_RDB_HEX to replica")
 
+def send_getack_to_replica(sock: socket): 
+    payload = (
+        "*3\r\n"
+        "$8\r\nREPLCONF\r\n"
+        "$6\r\nGETACK\r\n"
+        "$1\r\n*\r\n"
+    ).encode()
+    
+    try: 
+        while True: 
+            sock.sendall(payload)
+            print("[Master] Sent REPLCONF GETACK * to replica socket")
+    except Exception as e: 
+        print(f"[Master] Stopped sending GETACK to replica due to error: {e}")
+
 def propagate_commands_to_replicas(args, store: RedisStore):
     # if it is not the master server, do not run any logic and return
     if store.role != "master": 
@@ -236,8 +251,11 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                 print("INFO payload:", repr(info))
                 client.send(info)
             elif command == "REPLCONF":
-                print("[Master/Replica] Received REPLCONF command")
-                client.send(b"+OK\r\n")
+                if args[1].upper() != "ACK": 
+                    print("[Master/Replica] Received REPLCONF command")
+                    client.send(b"+OK\r\n")
+                else: 
+                    print("[Master] Received ACK from replica, no need to respond")
             elif command == "PSYNC": 
                 if len(args) == 3 and args[1] == "?" and args[2] == "-1": 
                     repl_id = store.master_repl_id
@@ -247,10 +265,30 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     # calling send_empty_rdb because psync command tells the master that the replica doesn't have data. 
                     # send_empty_rdb is sending an empty file (for this exercise) to fully synchronize
                     send_empty_rdb(client)
-                    time.sleep(0.05)
+                    # delay briefly to let replica read RDB before sending other commands
+                    time.sleep(0.1)
+                    # mark this socket as a ready replica
                     if store.role == "master": 
                         store.replica_sockets.append(client)
                         print("[Master] Registered a new replica socket")
+                        print("[Master] About to send ACK to replica")
+                        # start sending GETACK to this replica only
+                        # threading.Thread(
+                        #     target=send_getack_to_replica,
+                        #     args=(client,),
+                        #     daemon=True
+                        # ).start()
+                        payload = (
+                            "*3\r\n"
+                            "$8\r\nREPLCONF\r\n"
+                            "$6\r\nGETACK\r\n"
+                            "$1\r\n*\r\n"
+                        ).encode()
+                        try:
+                            client.sendall(payload)
+                            print("[Master] Sent single REPLCONF GETACK * to replica")
+                        except Exception as e:
+                            print(f"[Master] Failed to send GETACK: {e}")
             else: 
                 client.send(b"-ERR unknown command\r\n")
     except Exception as e: 
