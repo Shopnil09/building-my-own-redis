@@ -81,6 +81,7 @@ def replicate_command_listener(store: RedisStore):
                 store.set(key, val, px)
                 print("[Replica] Set data to the RedisStore sent by master")
             elif command == "REPLCONF" and len(args) == 3 and args[1].upper() == "GETACK": 
+                print("[Replica] received REPLCONF from master, sending payload...")
                 payload = (
                     "*3\r\n"
                     "$8\r\nREPLCONF\r\n"
@@ -226,6 +227,7 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                 print("INFO payload:", repr(info))
                 client.send(info)
             elif command == "REPLCONF":
+                print("[Master/Replica] Received REPLCONF command")
                 client.send(b"+OK\r\n")
             elif command == "PSYNC": 
                 if len(args) == 3 and args[1] == "?" and args[2] == "-1": 
