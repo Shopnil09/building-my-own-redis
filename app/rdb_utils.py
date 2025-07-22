@@ -1,6 +1,5 @@
 # app/rdb_utils.py
 import sys
-import socket
 
 def decode_size(f): 
   first = f.read(1)
@@ -37,7 +36,7 @@ def read_string(f):
   else: 
     print(f"[WARN] from read_string")
 
-def read_resp_command(sock: socket.socket):
+def read_resp_command(sock):
     def read_line():
         line = b""
         while not line.endswith(b"\r\n"):
@@ -85,4 +84,48 @@ def read_resp_command(sock: socket.socket):
         args.append(arg.decode())  # or `.decode("utf-8", errors="replace")`
 
     return args
+  
+def consume_full_psync_response(sock):
+    # Step 1: Read PSYNC response line
+    line = b""
+    while not line.endswith(b"\r\n"):
+        chunk = sock.recv(1)
+        if not chunk:
+            raise ConnectionError("Socket closed during PSYNC line read")
+        line += chunk
+
+    print(f"[Replica] Received PSYNC response {line}")
+    
+    if not line.startswith(b"+FULLRESYNC"):
+        raise ValueError("Expected FULLRESYNC")
+
+    # Step 2: Read the RDB bulk string header: $<len>\r\n
+    header = b""
+    while not header.endswith(b"\r\n"):
+        chunk = sock.recv(1)
+        if not chunk:
+            raise ConnectionError("Socket closed while reading RDB header")
+        header += chunk
+
+    print(f"[Replica] RDB header: {header}")
+    
+    if not header.startswith(b"$"):
+        raise ValueError("Expected RDB bulk string header")
+
+    try:
+        rdb_len = int(header[1:-2])  # remove $ and trailing \r\n
+    except ValueError:
+        raise ValueError(f"Invalid RDB length: {header}")
+
+    # Step 3: Read exactly rdb_len bytes of RDB binary data
+    rdb_data = b""
+    while len(rdb_data) < rdb_len:
+        chunk = sock.recv(min(4096, rdb_len - len(rdb_data)))
+        if not chunk:
+            raise ConnectionError("Socket closed while receiving RDB data")
+        rdb_data += chunk
+
+    print(f"[Replica] Received RDB data ({len(rdb_data)} bytes)")
+    return line, header, rdb_data
+
   

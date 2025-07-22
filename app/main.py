@@ -4,7 +4,7 @@ from app.redis_store import RedisStore
 from app.config import Config
 import argparse
 import os
-from app.rdb_utils import read_resp_command
+from app.rdb_utils import read_resp_command, consume_full_psync_response
 import time
 
 BUFF_SIZE = 4096
@@ -141,30 +141,37 @@ def replicate_handshake(store: RedisStore):
             "$2\r\n-1\r\n"
         )
         s.sendall(psync_command.encode())
-        psync_response = s.recv(1024)
-        print(f"[Replica] Received PSYNC response {psync_response}")
-        # Read RDB file (this is binary, so read based on declared length)
-        if psync_response.startswith(b'+FULLRESYNC'):
-            # Read the next line, which should be like $91\r\n
-            header = b""
-            while not header.endswith(b"\r\n"):
-                header += s.recv(1)
+        try:
+            psync_response, rdb_header, rdb_data = consume_full_psync_response(s)
+            print("[Replica] Completed PSYNC and RDB sync, socket is now clean")
+        except Exception as e: 
+            print(f"[Replica] Error during PSYNC handling: {e}")
+        # psync_response = s.recv(1024)
+        # print(f"[Replica] Received PSYNC response {psync_response}")
+        # # Read RDB file (this is binary, so read based on declared length)
+        # if psync_response.startswith(b'+FULLRESYNC'):
+        #     # Read the next line, which should be like $91\r\n
+        #     header = b""
+        #     while not header.endswith(b"\r\n"):
+        #         header += s.recv(1)
 
-            print(f"[Replica] RDB header: {header}")
+        #     print(f"[Replica] RDB header: {header}")
 
-            if header.startswith(b"$"):
-                rdb_len = int(header[1:-2])
-                print(f"[Replica] Expecting {rdb_len} bytes of RDB")
-                rdb_data = b""
-                while len(rdb_data) < rdb_len: 
-                    chunk = s.recv(min(4096, rdb_len-len(rdb_data)))
-                    if not chunk: 
-                        raise ConnectionError("Socket closed while receiving RDB")
-                    rdb_data += chunk
-                # rdb_data = s.recv(rdb_len)
-                print(f"[Replica] Received RDB data ({len(rdb_data)} bytes)")
-            else:
-                print("[Replica] Invalid RDB header")
+        #     if header.startswith(b"$"):
+        #         rdb_len = int(header[1:-2])
+        #         print(f"[Replica] Expecting {rdb_len} bytes of RDB")
+        #         rdb_data = b""
+        #         while len(rdb_data) < rdb_len: 
+        #             chunk = s.recv(min(4096, rdb_len-len(rdb_data)))
+        #             if not chunk: 
+        #                 raise ConnectionError("Socket closed while receiving RDB")
+        #             rdb_data += chunk
+                    
+        #         print(f"[Replica] Received RDB data ({len(rdb_data)} bytes)")
+        #         if len(rdb_data) != rdb_len:
+        #             print(f"[ERROR] RDB read mismatch! Expected {rdb_len}, got {len(rdb_data)}")
+        #     else:
+        #         print("[Replica] Invalid RDB header")
         
         print("[Replica] Completed REPLCONF handshake")
         
