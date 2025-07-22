@@ -251,11 +251,12 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                 print("INFO payload:", repr(info))
                 client.send(info)
             elif command == "REPLCONF":
-                if args[1].upper() != "ACK": 
+                if args[1].upper() == "ACK": 
+                    print("[Master] Received ACK from replica, registering socket")
+                    store.replica_sockets.append(client)
+                else: 
                     print("[Master/Replica] Received REPLCONF command")
                     client.send(b"+OK\r\n")
-                else: 
-                    print("[Master] Received ACK from replica, no need to respond")
             elif command == "PSYNC": 
                 if len(args) == 3 and args[1] == "?" and args[2] == "-1": 
                     repl_id = store.master_repl_id
@@ -269,7 +270,8 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     time.sleep(0.1)
                     # mark this socket as a ready replica
                     if store.role == "master": 
-                        store.replica_sockets.append(client)
+                        # commenting adding client to the replica_sockets list
+                        # store.replica_sockets.append(client)
                         print("[Master] Registered a new replica socket")
                         print("[Master] About to send ACK to replica")
                         # start sending GETACK to this replica only
