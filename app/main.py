@@ -40,9 +40,6 @@ def send_empty_rdb(sock: socket):
     header = f"${rdb_len}\r\n".encode()
     sock.sendall(header + EMPTY_RDB_BYTES)
     print("[Master] Sent the EMPTY_RDB_HEX to replica")
-    
-    # sleep to avoid race conditions with immediate command propagation
-    time.sleep(0.1)
 
 def propagate_commands_to_replicas(args, store: RedisStore):
     # if it is not the master server, do not run any logic and return
@@ -57,9 +54,9 @@ def propagate_commands_to_replicas(args, store: RedisStore):
     data = resp.encode()
     # to remove non-active sockets
     disconnected = []
+    print("[Master] Printing the length of replica_sockets", len(store.replica_sockets))
     for s in store.replica_sockets: 
         try: 
-            print(s)
             s.sendall(data)
         except Exception as e: 
             print("[Master] Failed to send to replica {e}")
@@ -246,6 +243,7 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     repl_id = store.master_repl_id
                     response = f"+FULLRESYNC {repl_id} 0\r\n"
                     client.send(response.encode())
+                    time.sleep(0.05)
                     # calling send_empty_rdb because psync command tells the master that the replica doesn't have data. 
                     # send_empty_rdb is sending an empty file (for this exercise) to fully synchronize
                     send_empty_rdb(client)
