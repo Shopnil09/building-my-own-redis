@@ -62,6 +62,7 @@ def propagate_commands_to_replicas(args, store: RedisStore):
     
     # add logic to cleanup disconnected sockets
 
+# this function is for the replica server to listen to commands from the master server and take specific actions
 def replicate_command_listener(store: RedisStore): 
     # this is added into the RedisStore in line 72 in replicate_handshake
     repl_sock = store.replica_socket
@@ -79,6 +80,15 @@ def replicate_command_listener(store: RedisStore):
                     px = int(args[4])
                 store.set(key, val, px)
                 print("[Replica] Set data to the RedisStore sent by master")
+            elif command == "REPLCONF" and len(args) == 3 and args[1].upper() == "GETACK": 
+                payload = (
+                    "*3\r\n"
+                    "$8\r\nREPLCONF\r\n"
+                    "$3\r\nACK\r\n"
+                    "$1\r\n0\r\n"
+                )
+                repl_sock.sendall(payload.encode())
+                print("[Replica] Sent REPLCONF ACK 0")
         except Exception as e: 
             print(f"[Replica] Error reading command: {e}")
             break
