@@ -5,6 +5,7 @@ from app.config import Config
 import argparse
 import os
 from app.rdb_utils import read_resp_command
+import time
 
 BUFF_SIZE = 4096
 
@@ -39,6 +40,9 @@ def send_empty_rdb(sock: socket):
     header = f"${rdb_len}\r\n".encode()
     sock.sendall(header + EMPTY_RDB_BYTES)
     print("[Master] Sent the EMPTY_RDB_HEX to replica")
+    
+    # sleep to avoid race conditions with immediate command propagation
+    time.sleep(0.1)
 
 def propagate_commands_to_replicas(args, store: RedisStore):
     # if it is not the master server, do not run any logic and return
