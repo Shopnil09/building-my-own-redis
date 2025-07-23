@@ -285,24 +285,24 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     if store.role == "master": 
                         store.replica_sockets.append(client)
                         print("[Master] Registered a new replica socket")
-                        print("[Master] About to send ACK to replica")
+                        print("[Master] Replica fully synced and registered")
                         # start sending GETACK to this replica only
                         # threading.Thread(
                         #     target=send_getack_to_replica,
                         #     args=(client,),
                         #     daemon=True
                         # ).start()
-                        payload = (
-                            "*3\r\n"
-                            "$8\r\nREPLCONF\r\n"
-                            "$6\r\nGETACK\r\n"
-                            "$1\r\n*\r\n"
-                        ).encode()
-                        try:
-                            client.sendall(payload)
-                            print("[Master] Sent single REPLCONF GETACK * to replica")
-                        except Exception as e:
-                            print(f"[Master] Failed to send GETACK: {e}")
+                        # payload = (
+                        #     "*3\r\n"
+                        #     "$8\r\nREPLCONF\r\n"
+                        #     "$6\r\nGETACK\r\n"
+                        #     "$1\r\n*\r\n"
+                        # ).encode()
+                        # try:
+                        #     client.sendall(payload)
+                        #     print("[Master] Sent single REPLCONF GETACK * to replica")
+                        # except Exception as e:
+                        #     print(f"[Master] Failed to send GETACK: {e}")
             else: 
                 client.send(b"-ERR unknown command\r\n")
     except Exception as e: 
