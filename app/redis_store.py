@@ -1,6 +1,7 @@
 import time
 from .rdb_loader import load_keys_from_rdb
 import secrets
+import threading
 
 class RedisStore: 
   def __init__(self, rdb_path=None, replica_config=None): 
@@ -20,6 +21,8 @@ class RedisStore:
     else: 
       self.master_repl_id = None
       self.master_repl_offset = None
+      self.repl_offset = 0
+      self.repl_offset_lock = threading.Lock()
     
     if rdb_path: # if rdb_path exists, load the data from the file 
       parsed_data = load_keys_from_rdb(rdb_path)

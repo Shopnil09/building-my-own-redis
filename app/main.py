@@ -86,7 +86,6 @@ def replicate_command_listener(store: RedisStore):
     # this is added into the RedisStore in line 72 in replicate_handshake
     repl_sock = store.replica_socket
     buffer = b""
-    ack_sent = False # to track if ACK is sent or not
     while True: 
         try: 
             chunk = repl_sock.recv(4096)
@@ -98,6 +97,11 @@ def replicate_command_listener(store: RedisStore):
                     args, remaining = try_read_resp_command(buffer)
                     if args is None: 
                         break
+                    
+                    consumed = len(buffer) - len(remaining)
+                    with store.repl_offset_lock: 
+                        store.repl_offset += consumed
+                    
                     buffer = remaining
                     command = args[0].upper()
                     if command == "SET": 
@@ -107,17 +111,20 @@ def replicate_command_listener(store: RedisStore):
                             px = int(args[4])
                         store.set(key, val, px)
                         print("[Replica] Set data to the RedisStore sent by master")
-                    elif (command == "REPLCONF" and len(args) == 3 and args[1].upper() == "GETACK" and not ack_sent): 
+                    elif command == "PING": 
+                        print("[Replica] Received ping from master")
+                    elif (command == "REPLCONF" and len(args) == 3 and args[1].upper() == "GETACK"): 
                         print("[Replica] received REPLCONF from master, sending payload...")
+                        with store.repl_offset_lock: 
+                            ack_offset = store.repl_offset
                         payload = (
                             "*3\r\n"
                             "$8\r\nREPLCONF\r\n"
                             "$3\r\nACK\r\n"
-                            "$1\r\n0\r\n"
+                            f"${len(str(ack_offset))}\r\n{ack_offset}\r\n"
                         )
                         repl_sock.sendall(payload.encode())
-                        print("[Replica] Sent REPLCONF ACK 0")
-                        ack_sent = True
+                        print(f"[Replica] Sent REPLCONF ACK {ack_offset}")
                     else: # any other commands, ignore and continue
                         pass
                 except Exception as e: 
