@@ -16,6 +16,7 @@ class RedisStore:
       self.master_repl_offset = 0
       # to store the replica sockets to propagate commands
       self.replica_sockets = [] 
+      self.command_logs = []
     else: 
       self.master_repl_id = None
       self.master_repl_offset = None

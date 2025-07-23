@@ -67,6 +67,8 @@ def propagate_commands_to_replicas(args, store: RedisStore):
         resp += f"${len(arg)}\r\n{arg}\r\n"
     print("[Master] Printing resp:", resp)
     data = resp.encode()
+    # store the commands in the command_logs
+    store.command_logs.append(data)
     # to remove non-active sockets
     disconnected = []
     print("[Master] Printing the length of replica_sockets", len(store.replica_sockets))
@@ -172,35 +174,8 @@ def replicate_handshake(store: RedisStore):
             print("[Replica] Completed PSYNC and RDB sync, socket is now clean")
         except Exception as e: 
             print(f"[Replica] Error during PSYNC handling: {e}")
-        # psync_response = s.recv(1024)
-        # print(f"[Replica] Received PSYNC response {psync_response}")
-        # # Read RDB file (this is binary, so read based on declared length)
-        # if psync_response.startswith(b'+FULLRESYNC'):
-        #     # Read the next line, which should be like $91\r\n
-        #     header = b""
-        #     while not header.endswith(b"\r\n"):
-        #         header += s.recv(1)
-
-        #     print(f"[Replica] RDB header: {header}")
-
-        #     if header.startswith(b"$"):
-        #         rdb_len = int(header[1:-2])
-        #         print(f"[Replica] Expecting {rdb_len} bytes of RDB")
-        #         rdb_data = b""
-        #         while len(rdb_data) < rdb_len: 
-        #             chunk = s.recv(min(4096, rdb_len-len(rdb_data)))
-        #             if not chunk: 
-        #                 raise ConnectionError("Socket closed while receiving RDB")
-        #             rdb_data += chunk
-                    
-        #         print(f"[Replica] Received RDB data ({len(rdb_data)} bytes)")
-        #         if len(rdb_data) != rdb_len:
-        #             print(f"[ERROR] RDB read mismatch! Expected {rdb_len}, got {len(rdb_data)}")
-        #     else:
-        #         print("[Replica] Invalid RDB header")
         
         print("[Replica] Completed REPLCONF handshake")
-        
         # logic to setup a background listener to handle propagated commands from master
         threading.Thread(
             target=replicate_command_listener,
@@ -286,23 +261,13 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                         store.replica_sockets.append(client)
                         print("[Master] Registered a new replica socket")
                         print("[Master] Replica fully synced and registered")
-                        # start sending GETACK to this replica only
-                        # threading.Thread(
-                        #     target=send_getack_to_replica,
-                        #     args=(client,),
-                        #     daemon=True
-                        # ).start()
-                        # payload = (
-                        #     "*3\r\n"
-                        #     "$8\r\nREPLCONF\r\n"
-                        #     "$6\r\nGETACK\r\n"
-                        #     "$1\r\n*\r\n"
-                        # ).encode()
-                        # try:
-                        #     client.sendall(payload)
-                        #     print("[Master] Sent single REPLCONF GETACK * to replica")
-                        # except Exception as e:
-                        #     print(f"[Master] Failed to send GETACK: {e}")
+                        
+                        # sync all the previous commands with the current replica
+                        for command in store.command_logs: 
+                            try: 
+                                client.sendall(command)
+                            except Exception as e: 
+                                print("[Master] Failed to replay command to replica: {e}")
             else: 
                 client.send(b"-ERR unknown command\r\n")
     except Exception as e: 
