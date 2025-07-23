@@ -131,4 +131,32 @@ def consume_full_psync_response(sock):
     print(f"[Replica] Received RDB data ({len(rdb_data)} bytes)")
     return line, header, rdb_data
 
+def try_read_resp_command(buffer: bytes): 
+    try:
+        args = []
+        i = 0
+        if not buffer.startswith(b"*"):
+            return None, buffer
+        end = buffer.find(b"\r\n")
+        if end == -1:
+            return None, buffer
+        num = int(buffer[1:end])
+        i = end + 2
+        for _ in range(num):
+            if i >= len(buffer) or buffer[i] != ord('$'):
+                return None, buffer
+            end = buffer.find(b"\r\n", i)
+            if end == -1:
+                return None, buffer
+            size = int(buffer[i+1:end])
+            i = end + 2
+            if i + size + 2 > len(buffer):
+                return None, buffer
+            arg = buffer[i:i+size]
+            args.append(arg.decode())
+            i += size + 2
+        return args, buffer[i:]
+    except:
+        return None, buffer
+
   

@@ -4,7 +4,7 @@ from app.redis_store import RedisStore
 from app.config import Config
 import argparse
 import os
-from app.rdb_utils import read_resp_command, consume_full_psync_response
+from app.rdb_utils import read_resp_command, consume_full_psync_response, try_read_resp_command
 import time
 
 BUFF_SIZE = 4096
@@ -83,30 +83,40 @@ def propagate_commands_to_replicas(args, store: RedisStore):
 def replicate_command_listener(store: RedisStore): 
     # this is added into the RedisStore in line 72 in replicate_handshake
     repl_sock = store.replica_socket
+    buffer = b""
     while True: 
         try: 
-            args = read_resp_command(repl_sock)
-            if not args: 
-                continue
-            
-            command = args[0].upper()
-            if command == "SET": 
-                key, val = args[1], args[2]
-                px = None
-                if len(args) >= 5 and args[3].upper() == "PX":
-                    px = int(args[4])
-                store.set(key, val, px)
-                print("[Replica] Set data to the RedisStore sent by master")
-            elif command == "REPLCONF" and len(args) == 3 and args[1].upper() == "GETACK": 
-                print("[Replica] received REPLCONF from master, sending payload...")
-                payload = (
-                    "*3\r\n"
-                    "$8\r\nREPLCONF\r\n"
-                    "$3\r\nACK\r\n"
-                    "$1\r\n0\r\n"
-                )
-                repl_sock.sendall(payload.encode())
-                print("[Replica] Sent REPLCONF ACK 0")
+            chunk = repl_sock.recv(4096)
+            if not chunk: 
+                break
+            buffer += chunk
+            while True: 
+                try: 
+                    args, remaining = try_read_resp_command(buffer)
+                    if args is None: 
+                        break
+                    buffer = remaining
+                    command = args[0].upper()
+                    if command == "SET": 
+                        key, val = args[1], args[2]
+                        px = None
+                        if len(args) >= 5 and args[3].upper() == "PX":
+                            px = int(args[4])
+                        store.set(key, val, px)
+                        print("[Replica] Set data to the RedisStore sent by master")
+                    elif command == "REPLCONF" and len(args) == 3 and args[1].upper() == "GETACK": 
+                        print("[Replica] received REPLCONF from master, sending payload...")
+                        payload = (
+                            "*3\r\n"
+                            "$8\r\nREPLCONF\r\n"
+                            "$3\r\nACK\r\n"
+                            "$1\r\n0\r\n"
+                        )
+                        repl_sock.sendall(payload.encode())
+                        print("[Replica] Sent REPLCONF ACK 0")
+                except Exception as e: 
+                    print(f"[Replica] Error during parsing or handling command {e}")
+                    break
         except Exception as e: 
             print(f"[Replica] Error reading command: {e}")
             break
