@@ -99,10 +99,6 @@ def replicate_command_listener(store: RedisStore):
                         break
                     
                     consumed = len(buffer) - len(remaining)
-                    with store.repl_offset_lock: 
-                        store.repl_offset += consumed
-                    
-                    buffer = remaining
                     command = args[0].upper()
                     if command == "SET": 
                         key, val = args[1], args[2]
@@ -126,7 +122,11 @@ def replicate_command_listener(store: RedisStore):
                         repl_sock.sendall(payload.encode())
                         print(f"[Replica] Sent REPLCONF ACK {ack_offset}")
                     else: # any other commands, ignore and continue
-                        pass
+                        print(f"[Replica] Ignored command {args}")
+                    
+                    with store.repl_offset_lock: 
+                        store.repl_offset += consumed
+                    buffer = remaining
                 except Exception as e: 
                     print(f"[Replica] Error during parsing or handling command {e}")
                     break
