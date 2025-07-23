@@ -84,6 +84,7 @@ def replicate_command_listener(store: RedisStore):
     # this is added into the RedisStore in line 72 in replicate_handshake
     repl_sock = store.replica_socket
     buffer = b""
+    ack_sent = False # to track if ACK is sent or not
     while True: 
         try: 
             chunk = repl_sock.recv(4096)
@@ -104,7 +105,7 @@ def replicate_command_listener(store: RedisStore):
                             px = int(args[4])
                         store.set(key, val, px)
                         print("[Replica] Set data to the RedisStore sent by master")
-                    elif command == "REPLCONF" and len(args) == 3 and args[1].upper() == "GETACK": 
+                    elif (command == "REPLCONF" and len(args) == 3 and args[1].upper() == "GETACK" and not ack_sent): 
                         print("[Replica] received REPLCONF from master, sending payload...")
                         payload = (
                             "*3\r\n"
@@ -114,6 +115,9 @@ def replicate_command_listener(store: RedisStore):
                         )
                         repl_sock.sendall(payload.encode())
                         print("[Replica] Sent REPLCONF ACK 0")
+                        ack_sent = True
+                    else: # any other commands, ignore and continue
+                        pass
                 except Exception as e: 
                     print(f"[Replica] Error during parsing or handling command {e}")
                     break
