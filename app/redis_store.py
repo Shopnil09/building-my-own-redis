@@ -106,6 +106,17 @@ class RedisStore:
   
   def xadd(self, stream_key, entry_id, fields):
     try: 
+      if "-" not in entry_id: 
+        return b"-ERR Invalid entry ID format\r\n"
+      
+      try:
+        ms_part, seq_part = map(int, entry_id.split("-"))
+      except ValueError: 
+        return b"-ERR Invalid entry ID format\r\n"
+      
+      if ms_part == 0 and seq_part == 0:
+        return b"-ERR The ID specified in XADD must be greater than 0-0\r\n"
+      
       if stream_key not in self.data: 
         self.data[stream_key] = {
           "type": "stream",
@@ -115,6 +126,15 @@ class RedisStore:
       stream_obj = self.data[stream_key]
       if stream_obj["type"] != "stream":
         return b"-ERR key exists but is not a stream\r\n"
+      
+      entries = stream_obj["entries"]
+      
+      if entries: 
+        last_id = next(reversed(entries))
+        last_ms, last_seq = map(int, last_id.split("-"))
+        
+        if ms_part < last_ms or (ms_part == last_ms and seq_part <= last_seq):
+          return b"-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"
       
       entry_data = {}
       # for loop to increment by 2 since it has key,val
