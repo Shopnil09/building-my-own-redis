@@ -106,53 +106,68 @@ class RedisStore:
   
   def xadd(self, stream_key, entry_id, fields):
     try: 
-      if "-" not in entry_id: 
-        return b"-ERR Invalid entry ID format\r\n"
-      
       if stream_key not in self.data: 
-        self.data[stream_key] = {
-          "type": "stream",
-          "entries": OrderedDict()
-        }
-      
+          self.data[stream_key] = {
+            "type": "stream",
+            "entries": OrderedDict()
+          }
+        
       stream_obj = self.data[stream_key]
       if stream_obj["type"] != "stream":
         return b"-ERR key exists but is not a stream\r\n"
-      
+        
       entries = stream_obj["entries"]
-      ms_raw, seq_raw = entry_id.split("-")
-      ms_part = int(ms_raw)
       
-      if ms_part < 0: 
-        return b"-ERR The ID specified in XADD must be greater than 0-0\r\n"
-      
-      if seq_raw == "*": 
-        # setting the default if seq_part is not found in the existing_id
-        if ms_part == 0: 
-          seq_part = 1
-        else: 
-          seq_part = 0
-        
-        for existing_id in reversed(entries): 
-          last_ms, last_seq = map(int, existing_id.split("-"))
-          if last_ms == ms_part:
+      if entry_id == "*": 
+        ms_part = self._curr_time_ms()
+        seq_part = 0
+        if entries: 
+          last_id = next(reversed(entries))
+          last_ms, last_seq = map(int, last_id.split("-"))
+          if ms_part < last_ms: 
+            ms_part = last_ms
             seq_part = last_seq + 1
-            break
-      else:
-        seq_part = int(seq_raw)
-        if ms_part == 0 and seq_part == 0:
-          return b"-ERR The ID specified in XADD must be greater than 0-0\r\n"
-      
-      final_id = f"{ms_part}-{seq_part}"
-      
-      # Validate: final_id must be strictly greater than last entry
-      if entries: 
-        last_id = next(reversed(entries))
-        last_ms, last_seq = map(int, last_id.split("-"))
+          elif ms_part == last_ms: 
+            seq_part = last_seq + 1
         
-        if ms_part < last_ms or (ms_part == last_ms and seq_part <= last_seq):
-          return b"-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"
-      
+        final_id = f"{ms_part}-{seq_part}"
+      else: 
+        if "-" not in entry_id: 
+          return b"-ERR Invalid entry ID format\r\n"
+        
+        ms_raw, seq_raw = entry_id.split("-")
+        ms_part = int(ms_raw)
+        
+        if ms_part < 0: 
+          return b"-ERR The ID specified in XADD must be greater than 0-0\r\n"
+        
+        if seq_raw == "*": 
+          # setting the default if seq_part is not found in the existing_id
+          if ms_part == 0: 
+            seq_part = 1
+          else: 
+            seq_part = 0
+          
+          for existing_id in reversed(entries): 
+            last_ms, last_seq = map(int, existing_id.split("-"))
+            if last_ms == ms_part:
+              seq_part = last_seq + 1
+              break
+        else:
+          seq_part = int(seq_raw)
+          if ms_part == 0 and seq_part == 0:
+            return b"-ERR The ID specified in XADD must be greater than 0-0\r\n"
+        
+        final_id = f"{ms_part}-{seq_part}"
+        
+        # Validate: final_id must be strictly greater than last entry
+        if entries: 
+          last_id = next(reversed(entries))
+          last_ms, last_seq = map(int, last_id.split("-"))
+          
+          if ms_part < last_ms or (ms_part == last_ms and seq_part <= last_seq):
+            return b"-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"
+        
       entry_data = {}
       # for loop to increment by 2 since it has key,val
       for i in range(0, len(fields), 2): 
