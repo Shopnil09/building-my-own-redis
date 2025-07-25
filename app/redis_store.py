@@ -74,6 +74,10 @@ class RedisStore:
     expired_keys = []
 
     for key, entry in self.data.items(): 
+      # skipping over non-string types
+      if entry.get("type") != "string": 
+        continue 
+      
       expiry = entry.get("expiry")
       if expiry is not None and now >= expiry: 
         expired_keys.append(key)
