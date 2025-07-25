@@ -2,10 +2,16 @@ import time
 from .rdb_loader import load_keys_from_rdb
 import secrets
 import threading
+from collections import OrderedDict
 
 class RedisStore:
   def __init__(self, rdb_path=None, replica_config=None):
-    self.data = {}
+    self.data = {
+      "stream_key": {
+        "type": "stream",
+        "entries": OrderedDict()
+      } 
+    }
     self.role = replica_config.get("role", "master")
     self.master_host = replica_config.get("master_host")
     self.master_port = replica_config.get("master_port")
@@ -30,24 +36,36 @@ class RedisStore:
       print(f"Printing self.data {self.data}")
 
   def set(self, key, val, px=None):
+    # expiry_time = None
+    # if px is not None:
+    #   expiry_time = self._curr_time_ms() + px
+    # # storing it as a tuple when the val and expiry_time
+    # self.data[key] = (val, expiry_time)
+    # return b"+OK\r\n"
     expiry_time = None
-    if px is not None:
+    if px is not None: 
       expiry_time = self._curr_time_ms() + px
-    # storing it as a tuple when the val and expiry_time
-    self.data[key] = (val, expiry_time)
+    
+    self.data[key] = {
+      "type": "string",
+      "value": val,
+      "expiry": expiry_time
+    }
+    
     return b"+OK\r\n"
 
   def get(self, key):
-    if key in self.data:
-      val, expiry = self.data[key]
-      if expiry is not None and self._curr_time_ms() >= expiry:
+    if key in self.data: 
+      entry = self.data[key]
+      
+      expiry = entry.get("expiry")
+      if expiry is not None and self._curr_time_ms() >= expiry: 
         del self.data[key]
         return b"$-1\r\n"
-
-      # no expiry, or data is within the timeframe
+      
+      val = entry["value"] 
       return f"${len(val)}\r\n{val}\r\n".encode()
-
-    # if key does not exist, send a null bulk string
+    
     return b"$-1\r\n"
 
   def keys(self):
@@ -55,28 +73,61 @@ class RedisStore:
     valid_keys = []
     expired_keys = []
 
-    for key, (val, expiry) in self.data.items():
-      if expiry is not None and now >= expiry:
+    for key, entry in self.data.items(): 
+      expiry = entry.get("expiry")
+      if expiry is not None and now >= expiry: 
         expired_keys.append(key)
-      else:
+      else: 
         valid_keys.append(key)
-
-    # cleaning up expired keys
+      
     for key in expired_keys:
       del self.data[key]
-
+      
     return self._encode_resp_list(valid_keys)
 
   def type(self, key):
-    if key in self.data:
-      val, exp = self.data[key]
-      if exp is not None and self._curr_time_ms() >= exp:
+    if key in self.data: 
+      entry = self.data[key]
+      expiry = entry.get("expiry")
+      if expiry is not None and self._curr_time_ms() >= expiry:
         del self.data[key]
+        # return none if key is expired
         return b"+none\r\n"
-
-      return b"+string\r\n"
-
+      
+      # return type
+      return f"+{entry['type']}\r\n".encode()
+    
+    # return none for type if the key is not found
     return b"+none\r\n"
+  
+  def xadd(self, stream_key, entry_id, fields):
+    try: 
+      if stream_key not in self.data: 
+        self.data[stream_key] = {
+          "type": "stream",
+          "entries": OrderedDict()
+        }
+        
+      stream_obj = self.data[stream_key]
+      if stream_obj["type"] != "stream":
+        return b"-ERR key exists but is not a stream\r\n"
+      
+      entry_data = {}
+      # for loop to increment by 2 since it has key,val
+      for i in range(0, len(fields), 2): 
+        field = fields[i]
+        value = fields[i+1]
+        entry_data[field] = value
+      
+      # insert entry into stream
+      stream_obj["entries"][entry_id] = entry_data
+      # return the entry ID as bulk string
+      print(stream_obj)
+      return f"${len(entry_id)}\r\n{entry_id}\r\n".encode()
+    except Exception as e:
+      print(f"[Redis Store XADD] Error {e}")
+      return b"-ERR Error with XADD"
+  
   def replication_info(self):
     lines = [
         f"role:{self.role}",

@@ -67,7 +67,11 @@ def load_keys_from_rdb(path: str):
         if expiry is not None and expiry < now: 
           continue
         
-        keys[key] = (val, expiry)
+        keys[key] = {
+          "value": val,
+          "expiry": expiry, 
+          "type": "string"
+        }
       else: 
         print("[RDB] Unknown or unsupported type")
   
