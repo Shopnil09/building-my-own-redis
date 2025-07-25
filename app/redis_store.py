@@ -195,7 +195,9 @@ class RedisStore:
     if "-" not in start_id:
       start_id += "-0"
      
-    if "-" not in end_id:
+    if end_id == "+": 
+      end_id = "9999999999999-999999"
+    elif "-" not in end_id: 
       end_id += "-999999"
     
     for entry_id, fields in entries.items(): 
