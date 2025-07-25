@@ -109,26 +109,43 @@ class RedisStore:
       if "-" not in entry_id: 
         return b"-ERR Invalid entry ID format\r\n"
       
-      try:
-        ms_part, seq_part = map(int, entry_id.split("-"))
-      except ValueError: 
-        return b"-ERR Invalid entry ID format\r\n"
-      
-      if ms_part == 0 and seq_part == 0:
-        return b"-ERR The ID specified in XADD must be greater than 0-0\r\n"
-      
       if stream_key not in self.data: 
         self.data[stream_key] = {
           "type": "stream",
           "entries": OrderedDict()
         }
-        
+      
       stream_obj = self.data[stream_key]
       if stream_obj["type"] != "stream":
         return b"-ERR key exists but is not a stream\r\n"
       
       entries = stream_obj["entries"]
+      ms_raw, seq_raw = entry_id.split("-")
+      ms_part = int(ms_raw)
       
+      if ms_part < 0: 
+        return b"-ERR The ID specified in XADD must be greater than 0-0\r\n"
+      
+      if seq_raw == "*": 
+        # setting the default if seq_part is not found in the existing_id
+        if ms_part == 0: 
+          seq_part = 1
+        else: 
+          seq_part = 0
+        
+        for existing_id in reversed(entries): 
+          last_ms, last_seq = map(int, existing_id.split("-"))
+          if last_ms == ms_part:
+            seq_part = last_seq + 1
+            break
+      else:
+        seq_part = int(seq_raw)
+        if ms_part == 0 and seq_part == 0:
+          return b"-ERR The ID specified in XADD must be greater than 0-0\r\n"
+      
+      final_id = f"{ms_part}-{seq_part}"
+      
+      # Validate: final_id must be strictly greater than last entry
       if entries: 
         last_id = next(reversed(entries))
         last_ms, last_seq = map(int, last_id.split("-"))
@@ -144,10 +161,10 @@ class RedisStore:
         entry_data[field] = value
       
       # insert entry into stream
-      stream_obj["entries"][entry_id] = entry_data
+      stream_obj["entries"][final_id] = entry_data
       # return the entry ID as bulk string
       print(stream_obj)
-      return f"${len(entry_id)}\r\n{entry_id}\r\n".encode()
+      return f"${len(final_id)}\r\n{final_id}\r\n".encode()
     except Exception as e:
       print(f"[Redis Store XADD] Error {e}")
       return b"-ERR Error with XADD"
