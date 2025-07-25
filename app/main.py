@@ -225,6 +225,15 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     client.send(response)
                 else: 
                     client.send(b"-ERR wrong number of arguments for XADD\r\n")
+            elif command == "XRANGE": 
+                if len(args) == 4: 
+                    stream_key = args[1]
+                    start_id = args[2]
+                    end_id = args[3]
+                    response = store.xrange(stream_key=stream_key, start_id=start_id, end_id=end_id)
+                    client.send(response)
+                else: 
+                    client.send(b"-ERR Wrong number of arguments for XRANGE\r\n")
             elif command == "CONFIG" and len(args) == 3 and args[1].upper() == "GET":
                 param = args[2]
                 value = config.get(param)

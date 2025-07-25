@@ -184,6 +184,33 @@ class RedisStore:
       print(f"[Redis Store XADD] Error {e}")
       return b"-ERR Error with XADD"
   
+  def xrange(self, stream_key, start_id, end_id): 
+    if stream_key not in self.data or self.data[stream_key]["type"] != "stream":
+      return b"$-1\r\n"  # stream does not exist
+    
+    entries = self.data[stream_key]["entries"]
+    result = []
+    
+    # normalize start and end
+    if "-" not in start_id:
+      start_id += "-0"
+     
+    if "-" not in end_id:
+      end_id += "-999999"
+    
+    for entry_id, fields in entries.items(): 
+      if start_id <= entry_id <= end_id: 
+        field_list = []
+        for k, v in fields.items(): 
+          field_list.append(k)
+          field_list.append(v)
+        
+        result.append([entry_id, field_list])
+    
+    return self._encode_resp_list_of_lists(result)
+    
+      
+  
   def replication_info(self):
     lines = [
         f"role:{self.role}",
@@ -198,6 +225,19 @@ class RedisStore:
     resp = f"*{len(items)}\r\n"
     for item in items:
       resp += f"${len(item)}\r\n{item}\r\n"
+    return resp.encode()
+  
+  def _encode_resp_list_of_lists(self, data): 
+    # data looks like this: [[entry_id, [key1, val1. key2, val2]]]
+    # parsed accordingly
+    resp = f"*{len(data)}\r\n"
+    for entry_id, fields in data: 
+      resp += "*2\r\n"
+      resp += f"${len(entry_id)}\r\n{entry_id}\r\n"
+      resp += f"*{len(fields)}\r\n"
+      for val in fields:
+          resp += f"${len(val)}\r\n{val}\r\n"
+    
     return resp.encode()
 
   def _curr_time_ms(self):
