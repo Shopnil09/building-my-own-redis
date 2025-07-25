@@ -76,7 +76,7 @@ class RedisStore:
 
       return b"+string\r\n"
 
-    return b"+\r\n"
+    return b"+none\r\n"
   def replication_info(self):
     lines = [
         f"role:{self.role}",
