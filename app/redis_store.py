@@ -3,71 +3,81 @@ from .rdb_loader import load_keys_from_rdb
 import secrets
 import threading
 
-class RedisStore: 
-  def __init__(self, rdb_path=None, replica_config=None): 
+class RedisStore:
+  def __init__(self, rdb_path=None, replica_config=None):
     self.data = {}
     self.role = replica_config.get("role", "master")
     self.master_host = replica_config.get("master_host")
     self.master_port = replica_config.get("master_port")
     self.replica_port = replica_config.get("replica_port", None)
-    
+
     # replication fields (only relevant for master)
-    if self.role == "master": 
+    if self.role == "master":
       self.master_repl_id = secrets.token_hex(20)
       self.master_repl_offset = 0
       # to store the replica sockets to propagate commands
-      self.replica_sockets = [] 
+      self.replica_sockets = []
       self.command_logs = []
-    else: 
+    else:
       self.master_repl_id = None
       self.master_repl_offset = None
       self.repl_offset = 0
       self.repl_offset_lock = threading.Lock()
-    
-    if rdb_path: # if rdb_path exists, load the data from the file 
+
+    if rdb_path: # if rdb_path exists, load the data from the file
       parsed_data = load_keys_from_rdb(rdb_path)
       self.data.update(parsed_data)
       print(f"Printing self.data {self.data}")
-  
-  def set(self, key, val, px=None): 
+
+  def set(self, key, val, px=None):
     expiry_time = None
-    if px is not None: 
+    if px is not None:
       expiry_time = self._curr_time_ms() + px
     # storing it as a tuple when the val and expiry_time
     self.data[key] = (val, expiry_time)
     return b"+OK\r\n"
-  
-  def get(self, key): 
+
+  def get(self, key):
     if key in self.data:
       val, expiry = self.data[key]
-      if expiry is not None and self._curr_time_ms() >= expiry: 
+      if expiry is not None and self._curr_time_ms() >= expiry:
         del self.data[key]
         return b"$-1\r\n"
-      
+
       # no expiry, or data is within the timeframe
       return f"${len(val)}\r\n{val}\r\n".encode()
-    
+
     # if key does not exist, send a null bulk string
     return b"$-1\r\n"
-  
-  def keys(self): 
+
+  def keys(self):
     now = self._curr_time_ms()
     valid_keys = []
     expired_keys = []
-    
-    for key, (val, expiry) in self.data.items(): 
-      if expiry is not None and now >= expiry: 
+
+    for key, (val, expiry) in self.data.items():
+      if expiry is not None and now >= expiry:
         expired_keys.append(key)
-      else: 
+      else:
         valid_keys.append(key)
-    
+
     # cleaning up expired keys
-    for key in expired_keys: 
+    for key in expired_keys:
       del self.data[key]
-    
+
     return self._encode_resp_list(valid_keys)
-  
-  def replication_info(self): 
+
+  def type(self, key):
+    if key in self.data:
+      val, exp = self.data[key]
+      if exp is not None and self._curr_time_ms() >= exp:
+        del self.data[key]
+        return b"+none\r\n"
+
+      return b"+string\r\n"
+
+    return b"+\r\n"
+  def replication_info(self):
     lines = [
         f"role:{self.role}",
         f"master_repl_offset:{self.master_repl_offset}",
@@ -77,11 +87,11 @@ class RedisStore:
     full_payload = f"${len(payload)}\r\n{payload}\r\n"
     return full_payload.encode()
 
-  def _encode_resp_list(self, items): 
+  def _encode_resp_list(self, items):
     resp = f"*{len(items)}\r\n"
-    for item in items: 
+    for item in items:
       resp += f"${len(item)}\r\n{item}\r\n"
     return resp.encode()
-    
-  def _curr_time_ms(self): 
+
+  def _curr_time_ms(self):
     return int(time.time() * 1000)

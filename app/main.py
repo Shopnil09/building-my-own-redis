@@ -223,6 +223,9 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
             elif command == "KEYS" and len(args) == 2 and args[1] == "*":
                 keys = store.keys()
                 client.send(keys)
+            elif command == "TYPE" and len(args) == 2: 
+                resp = store.type(args[1])
+                client.send(resp)
             elif command == "SET": 
                 if len(args) >= 3:
                     k, v = args[1], args[2]
