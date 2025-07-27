@@ -234,6 +234,14 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     client.send(response)
                 else: 
                     client.send(b"-ERR Wrong number of arguments for XRANGE\r\n")
+            elif command == "XREAD": 
+                if len(args) >= 4 and args[1].upper() == "STREAMS":
+                    stream_key = args[2]
+                    last_id = args[3]
+                    response = store.xread(stream_key, last_id)
+                    client.send(response)
+                else: 
+                    client.send(b"--ERR wrong number of arguments for XREAD\r\n")
             elif command == "CONFIG" and len(args) == 3 and args[1].upper() == "GET":
                 param = args[2]
                 value = config.get(param)
@@ -273,7 +281,7 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                 else: 
                     print("[Master/Replica] Received REPLCONF command")
                     client.send(b"+OK\r\n")
-            elif command == "PSYNC": 
+            elif command == "PSYNC":
                 if len(args) == 3 and args[1] == "?" and args[2] == "-1": 
                     repl_id = store.master_repl_id
                     response = f"+FULLRESYNC {repl_id} 0\r\n"

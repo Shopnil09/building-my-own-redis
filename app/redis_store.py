@@ -222,7 +222,31 @@ class RedisStore:
     payload = "\r\n".join(lines)  # do NOT add a final \r\n manually
     full_payload = f"${len(payload)}\r\n{payload}\r\n"
     return full_payload.encode()
-
+  
+  def xread(self, stream_key, last_id): 
+    if stream_key not in self.data or self.data[stream_key]["type"] != "stream": 
+      return b"$-1\r\n"
+    
+    entries = self.data[stream_key]["entries"]
+    result = []
+    found = False
+    for entry_id, fields in entries.items(): 
+      if not found: 
+        if entry_id > last_id: 
+          found = True
+        else: 
+          continue
+      
+      if found: 
+        field_list = []
+        for k, v in fields.items(): 
+          field_list.append(k)
+          field_list.append(v)
+        result.append([entry_id, field_list])
+    
+    outer = [[stream_key, result]]
+    return self._encode_xread_response(outer)
+    
   def _encode_resp_list(self, items):
     resp = f"*{len(items)}\r\n"
     for item in items:
@@ -241,6 +265,21 @@ class RedisStore:
           resp += f"${len(val)}\r\n{val}\r\n"
     
     return resp.encode()
-
+  
+  def _encode_xread_response(self, data): 
+    # Format: [[stream_key, [[entry_id, [k1, v1, k2, v2]], ...]]]
+    resp = f"*{len(data)}\r\n"
+    for stream_key, entries in data:
+        resp += "*2\r\n"
+        resp += f"${len(stream_key)}\r\n{stream_key}\r\n"
+        resp += f"*{len(entries)}\r\n"
+        for entry_id, field_values in entries:
+            resp += "*2\r\n"
+            resp += f"${len(entry_id)}\r\n{entry_id}\r\n"
+            resp += f"*{len(field_values)}\r\n"
+            for val in field_values:
+                resp += f"${len(val)}\r\n{val}\r\n"
+    return resp.encode()
+  
   def _curr_time_ms(self):
     return int(time.time() * 1000)
