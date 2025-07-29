@@ -58,7 +58,7 @@ class RedisStore:
     now = self._curr_time_ms()
     
     if key not in self.data: 
-      self.set("1")
+      self.set(key, "1")
       return 1
     
     entry = self.data[key]
