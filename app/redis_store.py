@@ -68,8 +68,13 @@ class RedisStore:
       self.set(key, "1")
       return 1
     
-    val = int(entry["value"])
-    val += 1
+    try:
+      val = int(entry["value"])
+      val += 1
+    except ValueError:
+      print("inside error block")
+      raise ValueError("NOT INT")
+    
     self.set(key, str(val), px=expiry - now if expiry else None)
     return val
 
