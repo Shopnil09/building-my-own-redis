@@ -218,8 +218,12 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                 response = f"${len(args[1])}\r\n{args[1]}\r\n"
                 client.send(response.encode())
             elif command == "GET" and len(args) == 2: 
-                data = store.get(args[1])
-                client.send(data)
+                if client_state["multi"]: 
+                    client_state["queued_commands"].append(args)
+                    client.send(b"+QUEUED\r\n")
+                else: 
+                    data = store.get(args[1])
+                    client.send(data)
             elif command == "XADD": # command for streaming data
                 if len(args) >= 4: 
                     stream_key = args[1]
