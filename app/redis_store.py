@@ -223,29 +223,54 @@ class RedisStore:
     full_payload = f"${len(payload)}\r\n{payload}\r\n"
     return full_payload.encode()
   
-  def xread(self, stream_key, last_id): 
-    if stream_key not in self.data or self.data[stream_key]["type"] != "stream": 
-      return b"$-1\r\n"
+  def xread(self, stream_keys, last_ids): 
+    # if stream_key not in self.data or self.data[stream_key]["type"] != "stream": 
+    #   return b"$-1\r\n"
     
-    entries = self.data[stream_key]["entries"]
-    result = []
-    found = False
-    for entry_id, fields in entries.items(): 
-      if not found: 
-        if entry_id > last_id: 
-          found = True
-        else: 
-          continue
+    # entries = self.data[stream_key]["entries"]
+    # result = []
+    # found = False
+    # for entry_id, fields in entries.items(): 
+    #   if not found: 
+    #     if entry_id > last_id: 
+    #       found = True
+    #     else: 
+    #       continue
       
-      if found: 
-        field_list = []
-        for k, v in fields.items(): 
-          field_list.append(k)
-          field_list.append(v)
-        result.append([entry_id, field_list])
+    #   if found: 
+    #     field_list = []
+    #     for k, v in fields.items(): 
+    #       field_list.append(k)
+    #       field_list.append(v)
+    #     result.append([entry_id, field_list])
     
-    outer = [[stream_key, result]]
-    return self._encode_xread_response(outer)
+    # outer = [[stream_key, result]]
+    # return self._encode_xread_response(outer)
+    result = []
+    
+    for stream_key, last_id in zip(stream_keys, last_ids): 
+      if stream_key not in self.data or self.data[stream_key]["type"] != "stream":
+            continue
+
+      entries = self.data[stream_key]["entries"]
+      matched_entries = []
+
+      for entry_id, fields in entries.items():
+          if entry_id > last_id:
+              field_list = []
+              for k, v in fields.items():
+                  field_list.append(k)
+                  field_list.append(v)
+              matched_entries.append([entry_id, field_list])
+
+      if matched_entries:
+          result.append([stream_key, matched_entries])
+
+    if not result:
+      return b"$-1\r\n"
+
+    return self._encode_xread_response(result)
+      
     
   def _encode_resp_list(self, items):
     resp = f"*{len(items)}\r\n"

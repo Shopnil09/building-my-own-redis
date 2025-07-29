@@ -236,12 +236,18 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     client.send(b"-ERR Wrong number of arguments for XRANGE\r\n")
             elif command == "XREAD": 
                 if len(args) >= 4 and args[1].upper() == "STREAMS":
-                    stream_key = args[2]
-                    last_id = args[3]
-                    response = store.xread(stream_key, last_id)
-                    client.send(response)
+                    mid = args.index("streams")
+                    stream_keys = args[mid + 1 : mid + 1 + (len(args) - mid - 1) // 2]
+                    last_ids = args[mid + 1 + len(stream_keys) : ]
+                    
+                    if len(stream_keys) != len(last_ids):
+                        client.send(b"-ERR stream key count doesn't match ID count\r\n")
+                    else:
+                        response = store.xread(stream_keys, last_ids)
+                        client.send(response)
                 else: 
-                    client.send(b"--ERR wrong number of arguments for XREAD\r\n")
+                    client.send(b"-ERR wrong number of arguments for XREAD\r\n")
+                    
             elif command == "CONFIG" and len(args) == 3 and args[1].upper() == "GET":
                 param = args[2]
                 value = config.get(param)
