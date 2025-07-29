@@ -277,6 +277,13 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     propagate_commands_to_replicas(args, store)
                 else: 
                     client.send(b"-ERR wrong number of arguments for SET\r\n")
+            elif command == "INCR": 
+                if len(args) != 2: 
+                    client.send(b"-ERR wrong number of arguments for INCR\r\n")
+                    continue
+                key = args[1]
+                new_val = store.incr(key)
+                client.send(f":{new_val}\r\n".encode())
             elif command == "INFO" and len(args) == 2 and args[1].upper() == "REPLICATION": 
                 info = store.replication_info()
                 print("INFO payload:", repr(info))

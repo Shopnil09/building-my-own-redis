@@ -53,6 +53,25 @@ class RedisStore:
     }
     
     return b"+OK\r\n"
+  
+  def incr(self, key): 
+    now = self._curr_time_ms()
+    
+    if key not in self.data: 
+      self.set("1")
+      return 1
+    
+    entry = self.data[key]
+    expiry = entry.get("expiry")
+    if expiry is not None and now >= expiry: 
+      del self.data[key]
+      self.set(key, "1")
+      return 1
+    
+    val = int(entry["value"])
+    val += 1
+    self.set(key, str(val), px=expiry - now if expiry else None)
+    return val
 
   def get(self, key):
     if key in self.data: 
