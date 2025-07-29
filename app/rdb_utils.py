@@ -159,4 +159,32 @@ def try_read_resp_command(buffer: bytes):
     except:
         return None, buffer
 
-  
+def execute_commands_from_args(store, args): 
+    command = args[0].upper()
+
+    if command == "SET":
+        if len(args) >= 3:
+            k, v = args[1], args[2]
+            px = None
+            if len(args) >= 5 and args[3].upper() == "PX":
+                try:
+                    px = int(args[4])
+                except ValueError:
+                    return b"-ERR PX value must be an integer\r\n"
+            return store.set(k, v, px)
+        return b"-ERR wrong number of arguments for SET\r\n"
+
+    elif command == "GET" and len(args) == 2:
+        return store.get(args[1])
+
+    elif command == "INCR":
+        if len(args) != 2:
+            return b"-ERR wrong number of arguments for INCR\r\n"
+        try:
+            val = store.incr(args[1])
+            return f":{val}\r\n".encode()
+        except ValueError:
+            return b"-ERR value is not an integer or out of range\r\n"
+
+    return b"-ERR unknown or unsupported command in MULTI/EXEC\r\n"
+

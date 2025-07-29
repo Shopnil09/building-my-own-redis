@@ -4,7 +4,7 @@ from app.redis_store import RedisStore
 from app.config import Config
 import argparse
 import os
-from app.rdb_utils import read_resp_command, consume_full_psync_response, try_read_resp_command
+from app.rdb_utils import consume_full_psync_response, try_read_resp_command, execute_commands_from_args
 import time
 
 BUFF_SIZE = 4096
@@ -291,15 +291,36 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     if len(args) != 2: 
                         client.send(b"-ERR wrong number of arguments for INCR\r\n")
                         continue
-                    key = args[1]
-                    new_val = store.incr(key)
-                    client.send(f":{new_val}\r\n".encode())
+                    if client_state["multi"]: 
+                        client_state["queued_commands"].append(args)
+                        client.send(b"+QUEUED\r\n")
+                    else: 
+                        key = args[1]
+                        new_val = store.incr(key)
+                        client.send(f":{new_val}\r\n".encode())
                 except ValueError: 
                     client.send(b"-ERR value is not an integer or out of range\r\n")
             elif command == "MULTI": 
                 client_state["multi"] = True
                 print(f"[DEBUG] printing client_state: {client_state}")
                 client.send(b"+OK\r\n")
+            elif command == "EXEC": 
+                if not client_state["multi"]: 
+                    client.send(b"-ERR EXEC without MULTI\r\n")
+                    continue
+                
+                responses = []
+                for queued_arg in client_state["queued_commands"]: 
+                    result = execute_commands_from_args(store, queued_arg)
+                    responses.append(result)
+                    # if queued_arg[0].upper() == "SET": 
+                    #     propagate_commands_to_replicas(queued_arg, )
+                
+                resp = f"*{len(responses)}\r\n".encode() + b"".join(responses)
+                client.send(resp)
+                # resetting client_state
+                client_state["multi"] = False
+                client_state["queued_commands"] = []
             elif command == "INFO" and len(args) == 2 and args[1].upper() == "REPLICATION": 
                 info = store.replication_info()
                 print("INFO payload:", repr(info))
