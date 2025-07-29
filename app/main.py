@@ -195,6 +195,10 @@ def replicate_handshake(store: RedisStore):
         print(f"[Replica] Connection to master failed: {e}")
 
 def handle_command(client: socket.socket, store: RedisStore, config: Config):
+    client_state = {
+        "multi": False,
+        "queued_commands": []
+    }
     try: 
         while True: 
             chunk = client.recv(BUFF_SIZE)
@@ -259,22 +263,27 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                 resp = store.type(args[1])
                 client.send(resp)
             elif command == "SET": 
+                print(f"[DEBUG] Printing client state inside SET command {client_state}")
                 if len(args) >= 3:
-                    k, v = args[1], args[2]
-                    px = None
-                    if len(args) >= 5 and args[3].upper() == "PX": 
-                        # form validation for wrong input
-                        try: 
-                            px = int(args[4])
-                        except ValueError: 
-                            client.send(b"-ERR PX value must be an integer\r\n")
-                            continue
-                    
-                    data = store.set(k, v, px)
-                    client.send(data)
-                    # propagate the command to the replicas of the master
-                    # this command will not be executed by the replicas since there is a condition in the beginning of the func.
-                    propagate_commands_to_replicas(args, store)
+                    if client_state["multi"]: 
+                        client_state["queued_commands"].append(args)
+                        client.send(b"+QUEUED\r\n")
+                    else: 
+                        k, v = args[1], args[2]
+                        px = None
+                        if len(args) >= 5 and args[3].upper() == "PX": 
+                            # form validation for wrong input
+                            try: 
+                                px = int(args[4])
+                            except ValueError: 
+                                client.send(b"-ERR PX value must be an integer\r\n")
+                                continue
+                        
+                        data = store.set(k, v, px)
+                        client.send(data)
+                        # propagate the command to the replicas of the master
+                        # this command will not be executed by the replicas since there is a condition in the beginning of the func.
+                        propagate_commands_to_replicas(args, store)
                 else: 
                     client.send(b"-ERR wrong number of arguments for SET\r\n")
             elif command == "INCR": 
@@ -287,6 +296,10 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                     client.send(f":{new_val}\r\n".encode())
                 except ValueError: 
                     client.send(b"-ERR value is not an integer or out of range\r\n")
+            elif command == "MULTI": 
+                client_state["multi"] = True
+                print(f"[DEBUG] printing client_state: {client_state}")
+                client.send(b"+OK\r\n")
             elif command == "INFO" and len(args) == 2 and args[1].upper() == "REPLICATION": 
                 info = store.replication_info()
                 print("INFO payload:", repr(info))
