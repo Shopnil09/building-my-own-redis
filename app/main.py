@@ -325,6 +325,13 @@ def handle_command(client: socket.socket, store: RedisStore, config: Config):
                 # resetting client_state
                 client_state["multi"] = False
                 client_state["queued_commands"] = []
+            elif command == "DISCARD": 
+                if not client_state["multi"]: 
+                    client.send(b"-ERR DISCARD without MULTI\r\n")
+                else: 
+                    client_state["multi"] = False
+                    client_state["queued_commands"] = []
+                    client.send(b"+OK\r\n")
             elif command == "INFO" and len(args) == 2 and args[1].upper() == "REPLICATION": 
                 info = store.replication_info()
                 print("INFO payload:", repr(info))
